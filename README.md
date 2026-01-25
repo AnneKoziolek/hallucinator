@@ -173,14 +173,14 @@ The `check_references_from_json.py` script processes references that have alread
 ```json
 [
   {
-    "pdf": "papers/ICSA_2026_paper_1.pdf",
+    "pdf": "papers/ICSA_2026_paper_X.pdf",
     "error": null,
     "reference_count": 30,
     "references": [
       {
-        "title": "Is sampling better than evolution for search-based software engineering",
+        "title": "Some Title",
         "authors": ["J Chen", "V Nair", "R Krishna", "T Menzies"],
-        "year": "2016",
+        "year": "2006",
         "doi": null,
         "verification": {
           "exists": false,
