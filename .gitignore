@@ -212,3 +212,5 @@ __marimo__/
 .gitignore
 chatGPT-output-with-id.md
 chatGPT-output-with-links.md
+chatGPT-output-with-links-and-ids.md
+merged-verdicts.md
