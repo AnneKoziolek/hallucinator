@@ -84,20 +84,87 @@ This outputs:
 To verify suspected hallucinations using an LLM (ChatGPT, Claude, etc.) with web search:
 
 ```bash
-python export_for_llm_verification.py results-filtered-postprocessed.json
+python3 export_for_llm_verification.py results-filtered-postprocessed.json
 ```
 
 This creates:
 - `hallucination-candidates-for-verification.txt` - Formatted list ready for LLM verification
   - Contains: title, authors, year for each suspected hallucination
+  - References formatted with paper IDs (e.g., `ICSA_2026_paper_107_R2`)
   - Includes prompt template for ChatGPT/Claude
+  - Paper ID mapping section to trace back to source manuscripts
 
-# Use OpenAlex API (queries OpenAlex first, then CrossRef, arXiv, DBLP on failure)
-python check_hallucinated_references.py --openalex-key=YOUR_API_KEY <path_to_pdf>
+**Reference ID Format:**
+Each reference uses format `[ICSA_2026_paper_XXX_RY]` where:
+- `ICSA_2026_paper_XXX` = Paper filename (for easy manuscript lookup)
+- `RY` = Reference number within that paper
 
-# Combine options
-python check_hallucinated_references.py --no-color --sleep=0.1 <path_to_pdf>
+### Merging multiple LLM verification runs
+
+After getting verification results from ChatGPT/Claude, merge and compare results:
+
+```bash
+python3 merge_llm_verdicts.py merged-verdicts.md file1.md file2.md
 ```
+
+This creates:
+- `merged-verdicts.md` - Sorted by verdict severity:
+  1. Two CONFIRMED_HALLUCINATION (highest confidence)
+  2. At least one CONFIRMED_HALLUCINATION
+  3. Two DUBIOUS
+  4. At least one DUBIOUS
+  5. All VERIFIED
+- Shows both verdicts side-by-side for comparison
+- Includes reference IDs for tracing back to papers
+
+## Complete Workflow Example
+
+From raw references to verified hallucinations:
+
+```bash
+# Step 1: Verify references against academic databases
+python3 check_references_from_json.py \
+  --openalex-key=YOUR_API_KEY \
+  --sleep=0.5 \
+  filtered.json
+# Output: results.json, results.txt
+
+# Step 2: Classify references by type (scholarly vs grey literature)
+python3 postprocess_results.py results.json
+# Output: results-postprocessed.json, results-filtered-postprocessed.json, report-postprocessed.txt
+
+# Step 3: Export true hallucination candidates for LLM verification
+python3 export_for_llm_verification.py results-filtered-postprocessed.json
+# Output: hallucination-candidates-for-verification.txt
+
+# Step 4: Verify in ChatGPT/Claude
+# Copy the "PROMPT TEMPLATE FOR LLM VERIFICATION" section
+# Paste into ChatGPT with web search enabled
+# Save results to chatGPT-output1.md and chatGPT-output2.md
+
+# Step 5: Merge multiple LLM verification runs
+python3 merge_llm_verdicts.py merged-verdicts.md \
+  chatGPT-output1.md \
+  chatGPT-output2.md
+# Output: merged-verdicts.md (sorted by verdict severity)
+```
+
+### Results
+
+- **Verification**: 388 references → 255 verified, 133 problematic
+- **Classification**: 133 problematic → 65 scholarly (true hallucinations), 68 grey literature
+- **LLM Verification**: 65 candidates ready for manual verification with web search
+- **Merged Results**: Side-by-side comparison of multiple verification runs
+
+## Scripts Summary
+
+| Script | Input | Output | Purpose |
+|--------|-------|--------|---------|
+| `check_hallucinated_references.py` | PDF file | Console + logs | Extract & verify references from PDFs |
+| `check_references_from_json.py` | JSON (references) | results.json | Verify pre-extracted references |
+| `postprocess_results.py` | results.json | results-postprocessed.json | Classify references by type |
+| `export_for_llm_verification.py` | results-filtered-postprocessed.json | hallucination-candidates-for-verification.txt | Format for LLM verification |
+| `merge_llm_verdicts.py` | Multiple .md files | merged-verdicts.md | Merge and compare LLM verification results |
 
 ### Checking references from JSON (from reference verification pipeline)
 
