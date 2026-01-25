@@ -33,6 +33,8 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Checking PDFs directly
+
 ```bash
 # Basic usage
 python check_hallucinated_references.py <path_to_pdf>
@@ -43,7 +45,6 @@ python check_hallucinated_references.py --no-color <path_to_pdf>
 # Save output to file
 python check_hallucinated_references.py --output log.txt <path_to_pdf>
 
-
 # Adjust delay before DBLP requests (default: 1 second, to avoid rate limiting)
 python check_hallucinated_references.py --sleep=0.5 <path_to_pdf>
 
@@ -52,6 +53,51 @@ python check_hallucinated_references.py --openalex-key=YOUR_API_KEY <path_to_pdf
 
 # Combine options
 python check_hallucinated_references.py --no-color --sleep=0.1 <path_to_pdf>
+```
+
+### Checking references from JSON (from reference verification pipeline)
+
+The `check_references_from_json.py` script processes references that have already been extracted and verified by another tool, reading a JSON file with the following format:
+
+```json
+[
+  {
+    "pdf": "papers/ICSA_2026_paper_1.pdf",
+    "error": null,
+    "reference_count": 30,
+    "references": [
+      {
+        "title": "Is sampling better than evolution for search-based software engineering",
+        "authors": ["J Chen", "V Nair", "R Krishna", "T Menzies"],
+        "year": "2016",
+        "doi": null,
+        "verification": {
+          "exists": false,
+          "reason": "score_below_threshold"
+        }
+      }
+    ]
+  }
+]
+```
+
+Usage:
+
+```bash
+# Basic usage
+python check_references_from_json.py <json_file>
+
+# Without colored output
+python check_references_from_json.py --no-color <json_file>
+
+# Save output to file
+python check_references_from_json.py --output results.txt <json_file>
+
+# With OpenAlex API key
+python check_references_from_json.py --openalex-key=YOUR_API_KEY <json_file>
+
+# With custom delay for DBLP
+python check_references_from_json.py --sleep=2.0 <json_file>
 ```
 
 ### Options
