@@ -36,12 +36,16 @@ def export_for_llm(input_file):
     print(f"Processing {len(results)} hallucination candidates...")
     print()
     
-    # Organize by PDF
+    # Organize by PDF with paper IDs from filenames
     by_pdf = {}
-    for ref in results:
+    pdf_to_id = {}
+    for idx, ref in enumerate(results):
         pdf = ref.get('pdf', 'unknown')
         if pdf not in by_pdf:
             by_pdf[pdf] = []
+            # Extract paper ID from filename (e.g., "ICSA_2026_paper_107" from "papers/ICSA_2026_paper_107.pdf")
+            paper_filename = os.path.basename(pdf).replace('.pdf', '')
+            pdf_to_id[pdf] = paper_filename
         by_pdf[pdf].append(ref)
     
     # Generate text output
@@ -65,13 +69,14 @@ def export_for_llm(input_file):
     # Output by PDF for context
     for pdf in sorted(by_pdf.keys()):
         refs = by_pdf[pdf]
+        paper_id = pdf_to_id[pdf]
         paper_name = os.path.basename(pdf)
         lines.append(f"\nPAPER: {pdf}")
         lines.append(f"       ({len(refs)} suspected hallucinations)")
         lines.append("-" * 80)
         lines.append("")
         
-        for i, ref in enumerate(refs, 1):
+        for ref_idx, ref in enumerate(refs, 1):
             title = ref.get('title', 'Unknown')
             authors = ref.get('authors', [])
             year = ref.get('year', 'Unknown Year')
@@ -82,13 +87,25 @@ def export_for_llm(input_file):
             else:
                 authors_str = str(authors)
             
-            lines.append(f"[{i}] {title}")
-            lines.append(f"    Authors: {authors_str}")
-            lines.append(f"    Year: {year}")
+            # Create reference ID using paper filename: ICSA_2026_paper_107_R1
+            ref_id = f"{paper_id}_R{ref_idx}"
+            lines.append(f"[{ref_id}] {title}")
+            lines.append(f"       Authors: {authors_str}")
+            lines.append(f"       Year: {year}")
             lines.append("")
     
-    # Summary section for quick reference
+    # Summary section: Paper paths for reference
     lines.append("")
+    lines.append("=" * 80)
+    lines.append("PAPER SOURCES")
+    lines.append("=" * 80)
+    lines.append("")
+    for pdf in sorted(by_pdf.keys()):
+        paper_id = pdf_to_id[pdf]
+        lines.append(f"{paper_id}: {pdf}")
+    lines.append("")
+    
+    # Quick reference list
     lines.append("=" * 80)
     lines.append("QUICK REFERENCE LIST FOR BATCH VERIFICATION")
     lines.append("=" * 80)
@@ -97,22 +114,26 @@ def export_for_llm(input_file):
     lines.append("")
     lines.append("-" * 80)
     
-    for i, ref in enumerate(results, 1):
-        title = ref.get('title', 'Unknown')
-        authors = ref.get('authors', [])
-        year = ref.get('year', '')
-        
-        if isinstance(authors, list):
-            authors_str = ', '.join(authors) if authors else ''
-        else:
-            authors_str = str(authors)
-        
-        if year:
-            line = f"{i}. \"{title}\" by {authors_str} ({year})"
-        else:
-            line = f"{i}. \"{title}\" by {authors_str}"
-        
-        lines.append(line)
+    for pdf in sorted(by_pdf.keys()):
+        refs = by_pdf[pdf]
+        paper_id = pdf_to_id[pdf]
+        for ref_idx, ref in enumerate(refs, 1):
+            title = ref.get('title', 'Unknown')
+            authors = ref.get('authors', [])
+            year = ref.get('year', '')
+            
+            if isinstance(authors, list):
+                authors_str = ', '.join(authors) if authors else ''
+            else:
+                authors_str = str(authors)
+            
+            ref_id = f"{paper_id}_R{ref_idx}"
+            if year:
+                line = f"[{ref_id}] \"{title}\" by {authors_str} ({year})"
+            else:
+                line = f"[{ref_id}] \"{title}\" by {authors_str}"
+            
+            lines.append(line)
     
     lines.append("-" * 80)
     lines.append("")
@@ -128,29 +149,37 @@ For each reference, determine if:
 2. The paper exists but has errors in title/authors/year (DUBIOUS - explain)
 3. The paper cannot be found anywhere (CONFIRMED_HALLUCINATION)
 
+IMPORTANT: Keep the reference ID in your response (e.g., ICSA_2026_paper_101_R1) so we can map back to the original paper.
+
 Format your response as:
-[1] Status | Explanation
+[ICSA_2026_paper_101_R1] Status | Explanation
+[ICSA_2026_paper_101_R2] Status | Explanation
+...
 
 References to verify:
 """)
     lines.append("")
     
-    for i, ref in enumerate(results, 1):
-        title = ref.get('title', 'Unknown')
-        authors = ref.get('authors', [])
-        year = ref.get('year', '')
-        
-        if isinstance(authors, list):
-            authors_str = ', '.join(authors) if authors else ''
-        else:
-            authors_str = str(authors)
-        
-        if year:
-            line = f"[{i}] \"{title}\" - {authors_str} ({year})"
-        else:
-            line = f"[{i}] \"{title}\" - {authors_str}"
-        
-        lines.append(line)
+    for pdf in sorted(by_pdf.keys()):
+        refs = by_pdf[pdf]
+        paper_id = pdf_to_id[pdf]
+        for ref_idx, ref in enumerate(refs, 1):
+            title = ref.get('title', 'Unknown')
+            authors = ref.get('authors', [])
+            year = ref.get('year', '')
+            
+            if isinstance(authors, list):
+                authors_str = ', '.join(authors) if authors else ''
+            else:
+                authors_str = str(authors)
+            
+            ref_id = f"{paper_id}_R{ref_idx}"
+            if year:
+                line = f"[{ref_id}] \"{title}\" - {authors_str} ({year})"
+            else:
+                line = f"[{ref_id}] \"{title}\" - {authors_str}"
+            
+            lines.append(line)
     
     lines.append("")
     

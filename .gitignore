@@ -210,3 +210,5 @@ __marimo__/
 **/*.json
 **/*.txt
 .gitignore
+chatGPT-output-with-id.md
+chatGPT-output-with-links.md
