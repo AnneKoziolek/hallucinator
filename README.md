@@ -48,6 +48,50 @@ python check_hallucinated_references.py --output log.txt <path_to_pdf>
 # Adjust delay before DBLP requests (default: 1 second, to avoid rate limiting)
 python check_hallucinated_references.py --sleep=0.5 <path_to_pdf>
 
+### Checking references from JSON (from reference verification pipeline)
+
+The `check_references_from_json.py` script processes references that have already been extracted and verified by another tool, reading a JSON file with structured reference data:
+
+```bash
+# Basic usage
+python check_references_from_json.py <json_file>
+
+# Without colored output
+python check_references_from_json.py --no-color <json_file>
+
+# With OpenAlex API key (for better coverage)
+python check_references_from_json.py --openalex-key=YOUR_API_KEY <json_file>
+
+# With custom delay for DBLP
+python check_references_from_json.py --sleep=2.0 <json_file>
+```
+
+### Post-processing: Classifying references by type
+
+After verification, use `postprocess_results.py` to classify references by type (scholarly vs grey literature):
+
+```bash
+python postprocess_results.py results.json
+```
+
+This outputs:
+- `results-postprocessed.json` - All results with classification
+- `results-filtered-postprocessed.json` - Only scholarly + not_found (true hallucinations)
+- `report-postprocessed.txt` - Classification statistics
+
+### Exporting for LLM verification
+
+To verify suspected hallucinations using an LLM (ChatGPT, Claude, etc.) with web search:
+
+```bash
+python export_for_llm_verification.py results-filtered-postprocessed.json
+```
+
+This creates:
+- `hallucination-candidates-for-verification.txt` - Formatted list ready for LLM verification
+  - Contains: title, authors, year for each suspected hallucination
+  - Includes prompt template for ChatGPT/Claude
+
 # Use OpenAlex API (queries OpenAlex first, then CrossRef, arXiv, DBLP on failure)
 python check_hallucinated_references.py --openalex-key=YOUR_API_KEY <path_to_pdf>
 
