@@ -38,7 +38,7 @@ class Colors:
         cls.RESET = ''
 
 
-def print_hallucinated_reference(title, error_type, source=None, ref_authors=None, found_authors=None, searched_openalex=False):
+def print_hallucinated_reference(title, error_type, source=None, ref_authors=None, found_authors=None, searched_openalex=False, citation_sentences=None):
     """Print formatted output for a hallucinated or mismatched reference."""
     print()
     print(f"{Colors.RED}{Colors.BOLD}{'='*60}{Colors.RESET}")
@@ -65,6 +65,15 @@ def print_hallucinated_reference(title, error_type, source=None, ref_authors=Non
         print(f"{Colors.BOLD}Authors in {source}:{Colors.RESET}")
         for author in found_authors:
             print(f"  {Colors.MAGENTA}• {author}{Colors.RESET}")
+    
+    # Show citation sentences if available
+    if citation_sentences:
+        print()
+        print(f"{Colors.BOLD}Cited in these sentences:{Colors.RESET}")
+        for i, sentence in enumerate(citation_sentences, 1):
+            # Truncate very long sentences for display
+            display_sentence = sentence if len(sentence) <= 200 else sentence[:197] + "..."
+            print(f"  {Colors.DIM}{i}. {display_sentence}{Colors.RESET}")
 
     print()
     print(f"{Colors.RED}{Colors.BOLD}{'-'*60}{Colors.RESET}")
@@ -549,8 +558,75 @@ def extract_title_from_reference(ref_text):
     return "", False
 
 
+def extract_citation_sentences(full_text, ref_section_start):
+    """Extract sentences containing reference citations from the main text.
+    
+    Args:
+        full_text: Complete text from the PDF
+        ref_section_start: Position where references section starts
+        
+    Returns:
+        Dictionary mapping reference numbers to lists of sentences containing that reference
+    """
+    # Get text before references section (the main document body)
+    main_text = full_text[:ref_section_start]
+    
+    # Dictionary to store sentences for each reference number
+    citations_dict = {}
+    
+    # Split into sentences (similar to split_sentences_skip_initials but simpler)
+    # Use regex to split on period + space, but not on initials
+    sentences = []
+    current_sentence = ""
+    
+    i = 0
+    while i < len(main_text):
+        char = main_text[i]
+        current_sentence += char
+        
+        # Check for period followed by space or newline
+        if char == '.' and i + 1 < len(main_text) and main_text[i + 1] in ' \n':
+            # Check if it's an initial (single capital letter before period)
+            if len(current_sentence) >= 2 and current_sentence[-2].isupper():
+                # Check if char before the capital is a space or start
+                if len(current_sentence) == 2 or not current_sentence[-3].isalpha():
+                    # This is likely an initial, don't split
+                    i += 1
+                    continue
+            
+            # This is a real sentence boundary
+            sentences.append(current_sentence.strip())
+            current_sentence = ""
+        
+        i += 1
+    
+    # Add the last sentence if it exists
+    if current_sentence.strip():
+        sentences.append(current_sentence.strip())
+    
+    # Find citations in each sentence
+    for sentence in sentences:
+        # Look for IEEE-style citations [1], [2], etc.
+        ieee_citations = re.findall(r'\[(\d+)\]', sentence)
+        
+        for ref_num in ieee_citations:
+            ref_num_int = int(ref_num)
+            if ref_num_int not in citations_dict:
+                citations_dict[ref_num_int] = []
+            # Avoid duplicate sentences
+            if sentence not in citations_dict[ref_num_int]:
+                citations_dict[ref_num_int].append(sentence)
+    
+    return citations_dict
+
+
 def extract_references_with_titles_and_authors(pdf_path):
-    """Extract references from PDF using pure Python (PyMuPDF)."""
+    """Extract references from PDF using pure Python (PyMuPDF).
+    
+    Returns:
+        List of tuples: (title, authors, citation_sentences)
+        where citation_sentences is a list of sentences from the paper that cite this reference
+    """
     try:
         text = extract_text_from_pdf(pdf_path)
     except Exception as e:
@@ -561,11 +637,18 @@ def extract_references_with_titles_and_authors(pdf_path):
     if not ref_section:
         print("[Error] Could not locate references section")
         return []
+    
+    # Find where the reference section starts in the full text
+    ref_section_start = text.find(ref_section)
+    
+    # Extract citation sentences from the main text
+    citations_dict = extract_citation_sentences(text, ref_section_start)
 
     raw_refs = segment_references(ref_section)
 
     references = []
     previous_authors = []
+    ref_index = 1  # Track the reference number
 
     for ref_text in raw_refs:
         # Fix hyphenation from PDF line breaks (preserves compound words like "human-centered")
@@ -575,11 +658,13 @@ def extract_references_with_titles_and_authors(pdf_path):
         # Also catch broken URLs with spaces like "https: //" or "ht tps://"
         if re.search(r'https?\s*:\s*//', ref_text) or re.search(r'ht\s*tps?\s*:\s*//', ref_text):
             if not re.search(r'(acm\.org|ieee\.org|usenix\.org|arxiv\.org|doi\.org)', ref_text, re.IGNORECASE):
+                ref_index += 1  # Still increment to keep numbering consistent
                 continue
 
         title, from_quotes = extract_title_from_reference(ref_text)
         title = clean_title(title, from_quotes=from_quotes)
         if not title or len(title.split()) < 5:
+            ref_index += 1  # Still increment to keep numbering consistent
             continue
 
         authors = extract_authors_from_reference(ref_text)
@@ -589,15 +674,21 @@ def extract_references_with_titles_and_authors(pdf_path):
             if previous_authors:
                 authors = previous_authors
             else:
+                ref_index += 1  # Still increment to keep numbering consistent
                 continue  # No previous authors to use
 
         if not authors:
+            ref_index += 1  # Still increment to keep numbering consistent
             continue
 
         # Update previous_authors for potential next em-dash reference
         previous_authors = authors
+        
+        # Get citation sentences for this reference
+        citation_sentences = citations_dict.get(ref_index, [])
 
-        references.append((title, authors))
+        references.append((title, authors, citation_sentences))
+        ref_index += 1
 
     return references
 
@@ -758,7 +849,7 @@ def main(pdf_path, sleep_time=1.0, openalex_key=None):
     failed = 0
     mismatched = 0
 
-    for i, (title, ref_authors) in enumerate(refs):
+    for i, (title, ref_authors, citation_sentences) in enumerate(refs):
         # Query services in order of rate limit generosity:
         # 1. OpenAlex (if API key provided) - most generous
         # 2. CrossRef - generous, large coverage
@@ -774,7 +865,8 @@ def main(pdf_path, sleep_time=1.0, openalex_key=None):
                 else:
                     print_hallucinated_reference(
                         title, "author_mismatch", source="OpenAlex",
-                        ref_authors=ref_authors, found_authors=found_authors
+                        ref_authors=ref_authors, found_authors=found_authors,
+                        citation_sentences=citation_sentences
                     )
                     mismatched += 1
                 continue
@@ -787,7 +879,8 @@ def main(pdf_path, sleep_time=1.0, openalex_key=None):
             else:
                 print_hallucinated_reference(
                     title, "author_mismatch", source="CrossRef",
-                    ref_authors=ref_authors, found_authors=found_authors
+                    ref_authors=ref_authors, found_authors=found_authors,
+                    citation_sentences=citation_sentences
                 )
                 mismatched += 1
             continue
@@ -800,7 +893,8 @@ def main(pdf_path, sleep_time=1.0, openalex_key=None):
             else:
                 print_hallucinated_reference(
                     title, "author_mismatch", source="arXiv",
-                    ref_authors=ref_authors, found_authors=found_authors
+                    ref_authors=ref_authors, found_authors=found_authors,
+                    citation_sentences=citation_sentences
                 )
                 mismatched += 1
             continue
@@ -814,12 +908,14 @@ def main(pdf_path, sleep_time=1.0, openalex_key=None):
             else:
                 print_hallucinated_reference(
                     title, "author_mismatch", source="DBLP",
-                    ref_authors=ref_authors, found_authors=found_authors
+                    ref_authors=ref_authors, found_authors=found_authors,
+                    citation_sentences=citation_sentences
                 )
                 mismatched += 1
             continue
 
-        print_hallucinated_reference(title, "not_found", searched_openalex=bool(openalex_key))
+        print_hallucinated_reference(title, "not_found", searched_openalex=bool(openalex_key), 
+                                     citation_sentences=citation_sentences)
         failed += 1
 
     # Print summary
