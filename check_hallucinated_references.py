@@ -574,35 +574,8 @@ def extract_citation_sentences(full_text, ref_section_start):
     # Dictionary to store sentences for each reference number
     citations_dict = {}
     
-    # Split into sentences (similar to split_sentences_skip_initials but simpler)
-    # Use regex to split on period + space, but not on initials
-    sentences = []
-    current_sentence = ""
-    
-    i = 0
-    while i < len(main_text):
-        char = main_text[i]
-        current_sentence += char
-        
-        # Check for period followed by space or newline
-        if char == '.' and i + 1 < len(main_text) and main_text[i + 1] in ' \n':
-            # Check if it's an initial (single capital letter before period)
-            if len(current_sentence) >= 2 and current_sentence[-2].isupper():
-                # Check if char before the capital is a space or start
-                if len(current_sentence) == 2 or not current_sentence[-3].isalpha():
-                    # This is likely an initial, don't split
-                    i += 1
-                    continue
-            
-            # This is a real sentence boundary
-            sentences.append(current_sentence.strip())
-            current_sentence = ""
-        
-        i += 1
-    
-    # Add the last sentence if it exists
-    if current_sentence.strip():
-        sentences.append(current_sentence.strip())
+    # Split into sentences using the existing helper function
+    sentences = split_sentences_skip_initials(main_text)
     
     # Find citations in each sentence
     for sentence in sentences:
@@ -648,9 +621,8 @@ def extract_references_with_titles_and_authors(pdf_path):
 
     references = []
     previous_authors = []
-    ref_index = 1  # Track the reference number
 
-    for ref_text in raw_refs:
+    for ref_index, ref_text in enumerate(raw_refs, start=1):
         # Fix hyphenation from PDF line breaks (preserves compound words like "human-centered")
         ref_text = fix_hyphenation(ref_text)
 
@@ -658,13 +630,11 @@ def extract_references_with_titles_and_authors(pdf_path):
         # Also catch broken URLs with spaces like "https: //" or "ht tps://"
         if re.search(r'https?\s*:\s*//', ref_text) or re.search(r'ht\s*tps?\s*:\s*//', ref_text):
             if not re.search(r'(acm\.org|ieee\.org|usenix\.org|arxiv\.org|doi\.org)', ref_text, re.IGNORECASE):
-                ref_index += 1  # Still increment to keep numbering consistent
                 continue
 
         title, from_quotes = extract_title_from_reference(ref_text)
         title = clean_title(title, from_quotes=from_quotes)
         if not title or len(title.split()) < 5:
-            ref_index += 1  # Still increment to keep numbering consistent
             continue
 
         authors = extract_authors_from_reference(ref_text)
@@ -674,11 +644,9 @@ def extract_references_with_titles_and_authors(pdf_path):
             if previous_authors:
                 authors = previous_authors
             else:
-                ref_index += 1  # Still increment to keep numbering consistent
                 continue  # No previous authors to use
 
         if not authors:
-            ref_index += 1  # Still increment to keep numbering consistent
             continue
 
         # Update previous_authors for potential next em-dash reference
@@ -688,7 +656,6 @@ def extract_references_with_titles_and_authors(pdf_path):
         citation_sentences = citations_dict.get(ref_index, [])
 
         references.append((title, authors, citation_sentences))
-        ref_index += 1
 
     return references
 

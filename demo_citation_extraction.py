@@ -85,13 +85,14 @@ References
     print(f"  Average citations per reference: {total_citations / total_refs:.1f}")
     print()
     
-    # Find uncited references
-    max_ref = 9  # We have 9 references in this example
-    uncited = [i for i in range(1, max_ref + 1) if i not in citations]
-    if uncited:
-        print(f"  Uncited references: {uncited}")
-    else:
-        print(f"  All references are cited in the text ✓")
+    # Find uncited references by checking the maximum reference number in citations
+    if citations:
+        max_ref = max(citations.keys())
+        uncited = [i for i in range(1, max_ref + 1) if i not in citations]
+        if uncited:
+            print(f"  Uncited references (within range 1-{max_ref}): {uncited}")
+        else:
+            print(f"  All references (1-{max_ref}) are cited in the text ✓")
     print()
 
 
