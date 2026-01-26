@@ -10,10 +10,10 @@ class TestExtractCitationSentences:
     def test_single_reference_single_sentence(self):
         """Test extraction of a single reference in a single sentence."""
         full_text = """This is the introduction.
-        Machine learning has been studied extensively [1].
-        
-        References
-        [1] A. Smith, "Deep Learning", 2020."""
+Machine learning has been studied extensively [1].
+
+References
+[1] A. Smith, "Deep Learning", 2020."""
         
         ref_start = full_text.find("References")
         citations = extract_citation_sentences(full_text, ref_start)

@@ -82,17 +82,20 @@ References
     print("=" * 70)
     print(f"  References cited in text: {total_refs}")
     print(f"  Total citation instances: {total_citations}")
-    print(f"  Average citations per reference: {total_citations / total_refs:.1f}")
+    if total_refs > 0:
+        print(f"  Average citations per reference: {total_citations / total_refs:.1f}")
     print()
     
-    # Find uncited references by checking the maximum reference number in citations
+    # Show which reference numbers were cited
     if citations:
-        max_ref = max(citations.keys())
-        uncited = [i for i in range(1, max_ref + 1) if i not in citations]
-        if uncited:
-            print(f"  Uncited references (within range 1-{max_ref}): {uncited}")
+        cited_refs = sorted(citations.keys())
+        print(f"  Reference numbers cited: {cited_refs}")
+        
+        # Check if they're sequential starting from 1
+        if cited_refs == list(range(1, len(cited_refs) + 1)):
+            print(f"  All references (1-{len(cited_refs)}) are cited in the text ✓")
         else:
-            print(f"  All references (1-{max_ref}) are cited in the text ✓")
+            print(f"  Note: References are not sequentially numbered from 1")
     print()
 
 

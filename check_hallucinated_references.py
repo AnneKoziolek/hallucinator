@@ -561,12 +561,31 @@ def extract_title_from_reference(ref_text):
 def extract_citation_sentences(full_text, ref_section_start):
     """Extract sentences containing reference citations from the main text.
     
+    This function analyzes the main document text (before the References section)
+    to find all sentences that cite each reference. It uses the existing
+    split_sentences_skip_initials() function to properly handle sentence boundaries,
+    which skips periods that are part of author initials (e.g., "M.", "J.") to
+    avoid incorrectly splitting sentences.
+    
     Args:
         full_text: Complete text from the PDF
         ref_section_start: Position where references section starts
         
     Returns:
-        Dictionary mapping reference numbers to lists of sentences containing that reference
+        Dictionary mapping reference numbers to lists of sentences containing that reference.
+        Each sentence is a string without the trailing period (as returned by split_sentences_skip_initials).
+        
+    Example:
+        >>> text = "Introduction. The work [1] is important. Later [1] was cited again. References [1] Title"
+        >>> ref_start = text.find("References")
+        >>> citations = extract_citation_sentences(text, ref_start)
+        >>> citations[1]
+        ['The work [1] is important', 'Later [1] was cited again']
+        
+    Note:
+        - Only handles IEEE-style citations ([1], [2], etc.)
+        - Duplicate sentences are automatically filtered out
+        - References not cited in the main text will not appear in the dictionary
     """
     # Get text before references section (the main document body)
     main_text = full_text[:ref_section_start]
@@ -574,7 +593,8 @@ def extract_citation_sentences(full_text, ref_section_start):
     # Dictionary to store sentences for each reference number
     citations_dict = {}
     
-    # Split into sentences using the existing helper function
+    # Split into sentences using the existing helper function that properly
+    # handles author initials like "M. Johnson" without breaking sentences
     sentences = split_sentences_skip_initials(main_text)
     
     # Find citations in each sentence
