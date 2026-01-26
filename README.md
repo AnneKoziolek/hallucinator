@@ -7,6 +7,7 @@ Created by Gianluca Stringhini with the help of Claude Code and ChatGPT
 ## Features
 
 - Pure Python PDF reference extraction using PyMuPDF (no external services required)
+- **Citation sentence extraction**: Extracts and displays the sentences where each reference is cited in the paper
 - Supports multiple citation formats:
   - IEEE (quoted titles)
   - ACM (year before title)
@@ -19,6 +20,8 @@ Created by Gianluca Stringhini with the help of Claude Code and ChatGPT
 - Author matching to detect title matches with wrong authors
 - Colored terminal output for easy identification of issues
 - Handles em-dash citations (same authors as previous reference)
+- Comprehensive unit tests for citation extraction logic
+
 
 ## Installation
 
@@ -234,6 +237,10 @@ Title:
 Status: Reference not found in any database
 Searched: CrossRef, arXiv, DBLP
 
+Cited in these sentences:
+  1. This approach was first proposed in [15] and has since been widely adopted.
+  2. The results from [15] show significant improvement over baseline methods.
+
 ------------------------------------------------------------
 
 ============================================================
@@ -244,18 +251,50 @@ SUMMARY
   Not found (potential hallucinations): 1
 ```
 
+## Testing and Demonstration
+
+### Running Unit Tests
+
+The repository includes comprehensive unit tests for the citation sentence extraction functionality:
+
+```bash
+# Run all tests
+python -m pytest test_citation_extraction.py -v
+
+# Run specific test
+python -m pytest test_citation_extraction.py::TestExtractCitationSentences::test_single_reference_single_sentence -v
+```
+
+### Citation Extraction Demo
+
+To see how citation sentence extraction works without requiring a PDF:
+
+```bash
+python demo_citation_extraction.py
+```
+
+This demonstrates the extraction of citation sentences from sample academic text, showing:
+- Which sentences cite each reference
+- How many times each reference is cited
+- Statistics about citation patterns
+
 ## How It Works
 
 1. **PDF Text Extraction**: Uses PyMuPDF to extract text from the PDF
 2. **Reference Section Detection**: Locates the "References" or "Bibliography" section
-3. **Reference Segmentation**: Splits references by numbered patterns ([1], [2], etc.)
-4. **Title & Author Extraction**: Parses each reference to extract title and authors
-5. **Database Validation**: Queries databases in order of rate-limit generosity:
+3. **Citation Sentence Extraction**: Finds and extracts sentences from the main text that cite each reference
+   - Handles IEEE-style citations ([1], [2], etc.)
+   - Properly handles author initials (M., J., etc.) when detecting sentence boundaries
+   - Associates each citation marker with its containing sentence
+4. **Reference Segmentation**: Splits references by numbered patterns ([1], [2], etc.)
+5. **Title & Author Extraction**: Parses each reference to extract title and authors
+6. **Database Validation**: Queries databases in order of rate-limit generosity:
    - OpenAlex (if API key provided) - most generous rate limits
    - CrossRef - good coverage, generous limits
    - arXiv - moderate limits
    - DBLP - most restrictive, queried last with configurable delay
-6. **Author Matching**: Confirms that found titles have matching authors
+7. **Author Matching**: Confirms that found titles have matching authors
+8. **Citation Context Display**: Shows the sentences where problematic references are cited
 
 ## Limitations
 
