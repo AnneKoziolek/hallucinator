@@ -14,12 +14,18 @@ import sys
 import os
 
 
-def export_for_llm(input_file):
+def export_for_llm(input_file, output_dir=None):
     """
     Export filtered results to plain text format for LLM verification.
-    
+
+    Args:
+        input_file: path to results-filtered-postprocessed.json
+        output_dir: directory for output file (default: current directory)
+
     Outputs: hallucination-candidates-for-verification.txt
     """
+    if output_dir is None:
+        output_dir = '.'
     
     # Read input file
     try:
@@ -57,7 +63,7 @@ def export_for_llm(input_file):
     lines.append("")
     lines.append(f"Total suspected hallucinations: {len(results)}")
     lines.append("")
-    lines.append("Instructions for LLM verification:")
+    lines.append("Steps for chat assistant  verification (see exact prompt below):")
     lines.append("  1. Use web search to verify each reference")
     lines.append("  2. Check if the title, authors, and year match")
     lines.append("  3. Mark as: VERIFIED, DUBIOUS, or CONFIRMED_HALLUCINATION")
@@ -79,19 +85,28 @@ def export_for_llm(input_file):
         for ref_idx, ref in enumerate(refs, 1):
             title = ref.get('title', 'Unknown')
             authors = ref.get('authors', [])
-            year = ref.get('year', 'Unknown Year')
-            
+            year = ref.get('year', '')
+            doi = ref.get('doi', None)
+            classification = ref.get('reference_classification', {})
+            hallucinator = ref.get('hallucinator_check', {})
+
             # Format authors
             if isinstance(authors, list):
                 authors_str = ', '.join(authors) if authors else 'Unknown Authors'
             else:
                 authors_str = str(authors)
-            
+
             # Create reference ID using paper filename: ICSA_2026_paper_107_R1
             ref_id = f"{paper_id}_R{ref_idx}"
             lines.append(f"[{ref_id}] {title}")
             lines.append(f"       Authors: {authors_str}")
-            lines.append(f"       Year: {year}")
+            if year:
+                lines.append(f"       Year: {year}")
+            if doi:
+                lines.append(f"       DOI: {doi}")
+            lines.append(f"       Status: {hallucinator.get('status', 'unknown')}")
+            if classification:
+                lines.append(f"       Classification: {classification.get('type', 'unknown')} ({classification.get('confidence', '')})")
             lines.append("")
     
     # Summary section: Paper paths for reference
@@ -121,23 +136,24 @@ def export_for_llm(input_file):
             title = ref.get('title', 'Unknown')
             authors = ref.get('authors', [])
             year = ref.get('year', '')
-            
+            doi = ref.get('doi', None)
+
             if isinstance(authors, list):
                 authors_str = ', '.join(authors) if authors else ''
             else:
                 authors_str = str(authors)
-            
+
             ref_id = f"{paper_id}_R{ref_idx}"
+            parts = [f"[{ref_id}] \"{title}\" by {authors_str}"]
             if year:
-                line = f"[{ref_id}] \"{title}\" by {authors_str} ({year})"
-            else:
-                line = f"[{ref_id}] \"{title}\" by {authors_str}"
-            
-            lines.append(line)
-    
+                parts.append(f"({year})")
+            if doi:
+                parts.append(f"DOI: {doi}")
+            lines.append(' '.join(parts))
+
     lines.append("-" * 80)
     lines.append("")
-    
+
     # Prompt template for LLM
     lines.append("=" * 80)
     lines.append("PROMPT TEMPLATE FOR LLM VERIFICATION")
@@ -167,24 +183,25 @@ References to verify:
             title = ref.get('title', 'Unknown')
             authors = ref.get('authors', [])
             year = ref.get('year', '')
-            
+            doi = ref.get('doi', None)
+
             if isinstance(authors, list):
                 authors_str = ', '.join(authors) if authors else ''
             else:
                 authors_str = str(authors)
-            
+
             ref_id = f"{paper_id}_R{ref_idx}"
+            parts = [f"[{ref_id}] \"{title}\" - {authors_str}"]
             if year:
-                line = f"[{ref_id}] \"{title}\" - {authors_str} ({year})"
-            else:
-                line = f"[{ref_id}] \"{title}\" - {authors_str}"
-            
-            lines.append(line)
-    
+                parts.append(f"({year})")
+            if doi:
+                parts.append(f"[DOI: {doi}]")
+            lines.append(' '.join(parts))
+
     lines.append("")
     
     # Write output file
-    output_file = 'hallucination-candidates-for-verification.txt'
+    output_file = os.path.join(output_dir, 'hallucination-candidates-for-verification.txt')
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))

@@ -146,15 +146,21 @@ def classify_reference(ref):
     }
 
 
-def postprocess_results(input_file):
+def postprocess_results(input_file, output_dir=None):
     """
     Post-process results.json to add classifications.
-    
+
+    Args:
+        input_file: path to results.json
+        output_dir: directory for output files (default: current directory)
+
     Outputs:
     - results-postprocessed.json: All results with classifications
     - results-filtered-postprocessed.json: Only scholarly_candidate + not_found
     - report-postprocessed.txt: Statistics report
     """
+    if output_dir is None:
+        output_dir = '.'
     
     # Read input file
     try:
@@ -213,7 +219,7 @@ def postprocess_results(input_file):
             filtered_results.append(ref_with_classification)
     
     # Write postprocessed results
-    output_file = 'results-postprocessed.json'
+    output_file = os.path.join(output_dir, 'results-postprocessed.json')
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(postprocessed_results, f, indent=2, ensure_ascii=False)
@@ -222,7 +228,7 @@ def postprocess_results(input_file):
         print(f"[Error] Failed to write {output_file}: {e}")
     
     # Write filtered results
-    filtered_file = 'results-filtered-postprocessed.json'
+    filtered_file = os.path.join(output_dir, 'results-filtered-postprocessed.json')
     try:
         with open(filtered_file, 'w', encoding='utf-8') as f:
             json.dump(filtered_results, f, indent=2, ensure_ascii=False)
@@ -301,7 +307,7 @@ def postprocess_results(input_file):
     report.append("=" * 70)
     
     # Write report
-    report_file = 'report-postprocessed.txt'
+    report_file = os.path.join(output_dir, 'report-postprocessed.txt')
     try:
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(report))

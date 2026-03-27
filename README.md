@@ -6,6 +6,7 @@ Created by Gianluca Stringhini with the help of Claude Code and ChatGPT
 
 ## Features
 
+- **End-to-end pipeline**: point it at a folder of PDFs and get a verification report
 - Pure Python PDF reference extraction using PyMuPDF (no external services required)
 - Supports multiple citation formats:
   - IEEE (quoted titles)
@@ -16,6 +17,8 @@ Created by Gianluca Stringhini with the help of Claude Code and ChatGPT
   - CrossRef
   - arXiv
   - DBLP
+- Classifies references as scholarly vs grey literature (standards, industry reports, specs)
+- Exports suspected hallucinations with a ready-to-paste prompt for LLM verification
 - Author matching to detect title matches with wrong authors
 - Colored terminal output for easy identification of issues
 - Handles em-dash citations (same authors as previous reference)
@@ -31,218 +34,138 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
+## Quick Start
 
-### Checking PDFs directly
-
-```bash
-# Basic usage
-python check_hallucinated_references.py <path_to_pdf>
-
-# Without colored output (for piping or non-color terminals)
-python check_hallucinated_references.py --no-color <path_to_pdf>
-
-# Save output to file
-python check_hallucinated_references.py --output log.txt <path_to_pdf>
-
-# Adjust delay before DBLP requests (default: 1 second, to avoid rate limiting)
-python check_hallucinated_references.py --sleep=0.5 <path_to_pdf>
-
-### Checking references from JSON (from reference verification pipeline)
-
-The `check_references_from_json.py` script processes references that have already been extracted and verified by another tool, reading a JSON file with structured reference data:
+Place your PDF files in a `papers/` directory (or any directory of your choice), then run:
 
 ```bash
-# Basic usage
-python check_references_from_json.py <json_file>
+source venv/bin/activate
 
-# Without colored output
-python check_references_from_json.py --no-color <json_file>
+# Run the full pipeline
+python3 run_pipeline.py -d papers/ --sleep=0.5 --output-dir=output/
 
-# With OpenAlex API key (for better coverage)
-python check_references_from_json.py --openalex-key=YOUR_API_KEY <json_file>
-
-# With custom delay for DBLP
-python check_references_from_json.py --sleep=2.0 <json_file>
+# With OpenAlex API key for better database coverage (optional)
+python3 run_pipeline.py -d papers/ --openalex-key=YOUR_API_KEY --sleep=0.5 --output-dir=output/
 ```
 
-### Post-processing: Classifying references by type
+This will:
+1. Extract references from every PDF in the directory
+2. Verify each reference against OpenAlex, CrossRef, arXiv, and DBLP
+3. Classify references as scholarly vs grey literature (standards, industry reports, etc.)
+4. Export suspected hallucinations to a text file with a ready-to-paste LLM prompt
 
-After verification, use `postprocess_results.py` to classify references by type (scholarly vs grey literature):
+### Pipeline options
 
-```bash
-python postprocess_results.py results.json
-```
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-d`, `--pdf-dir` | `papers/` | Directory containing PDF files |
+| `--openalex-key` | *(none)* | OpenAlex API key for enhanced metadata |
+| `--sleep` | `0.5` | Seconds to wait between DBLP queries (rate limiting) |
+| `--output-dir` | `output/` | Directory for all output files |
 
-This outputs:
-- `results-postprocessed.json` - All results with classification
-- `results-filtered-postprocessed.json` - Only scholarly + not_found (true hallucinations)
-- `report-postprocessed.txt` - Classification statistics
+### Output files
 
-### Exporting for LLM verification
+After the pipeline runs, the output directory will contain:
 
-To verify suspected hallucinations using an LLM (ChatGPT, Claude, etc.) with web search:
+| File | Description |
+|------|-------------|
+| `results.json` | Full verification results for every reference |
+| `results-postprocessed.json` | All results with scholarly/grey literature classification |
+| `results-filtered-postprocessed.json` | Only scholarly references that were not found (true hallucination candidates) |
+| `report-postprocessed.txt` | Human-readable classification statistics |
+| `hallucination-candidates-for-verification.txt` | Formatted list with LLM prompt template for manual verification |
 
-```bash
-python3 export_for_llm_verification.py results-filtered-postprocessed.json
-```
+### What to do with the results
 
-This creates:
-- `hallucination-candidates-for-verification.txt` - Formatted list ready for LLM verification
-  - Contains: title, authors, year for each suspected hallucination
-  - References formatted with paper IDs (e.g., `ICSA_2026_paper_107_R2`)
-  - Includes prompt template for ChatGPT/Claude
-  - Paper ID mapping section to trace back to source manuscripts
-
-**Reference ID Format:**
-Each reference uses format `[ICSA_2026_paper_XXX_RY]` where:
-- `ICSA_2026_paper_XXX` = Paper filename (for easy manuscript lookup)
-- `RY` = Reference number within that paper
-
-### Merging multiple LLM verification runs
-
-After getting verification results from ChatGPT/Claude, merge and compare results:
+1. Open `output/hallucination-candidates-for-verification.txt`
+2. Copy the **"PROMPT TEMPLATE FOR LLM VERIFICATION"** section at the bottom
+3. Paste it into ChatGPT (with web search enabled) or Claude
+4. Save the LLM's response to a `.md` file, e.g. `output/llm-run1.md`
+5. Optionally repeat with a second LLM run and merge the results:
 
 ```bash
-python3 merge_llm_verdicts.py merged-verdicts.md file1.md file2.md
+python3 merge_llm_verdicts.py output/merged-verdicts.md output/llm-run1.md output/llm-run2.md
 ```
 
-This creates:
-- `merged-verdicts.md` - Sorted by verdict severity:
-  1. Two CONFIRMED_HALLUCINATION (highest confidence)
-  2. At least one CONFIRMED_HALLUCINATION
-  3. Two DUBIOUS
-  4. At least one DUBIOUS
-  5. All VERIFIED
-- Shows both verdicts side-by-side for comparison
-- Includes reference IDs for tracing back to papers
+The merge script sorts results by severity: confirmed hallucinations first, then dubious, then verified.
 
-## Complete Workflow Example
+The LLM response must use the format `[ref_id] VERDICT | explanation` (one per line), where VERDICT is `VERIFIED`, `DUBIOUS`, or `CONFIRMED_HALLUCINATION`. The prompt template already asks the LLM to use this format.
 
-From raw references to verified hallucinations:
+## Running Tests
 
 ```bash
-# Step 1: Verify references against academic databases
-python3 check_references_from_json.py \
-  --openalex-key=YOUR_API_KEY \
-  --sleep=0.5 \
-  filtered.json
-# Output: results.json, results.txt
-
-# Step 2: Classify references by type (scholarly vs grey literature)
-python3 postprocess_results.py results.json
-# Output: results-postprocessed.json, results-filtered-postprocessed.json, report-postprocessed.txt
-
-# Step 3: Export true hallucination candidates for LLM verification
-python3 export_for_llm_verification.py results-filtered-postprocessed.json
-# Output: hallucination-candidates-for-verification.txt
-
-# Step 4: Verify in ChatGPT/Claude
-# Copy the "PROMPT TEMPLATE FOR LLM VERIFICATION" section
-# Paste into ChatGPT with web search enabled
-# Save results to chatGPT-output1.md and chatGPT-output2.md
-
-# Step 5: Merge multiple LLM verification runs
-python3 merge_llm_verdicts.py merged-verdicts.md \
-  chatGPT-output1.md \
-  chatGPT-output2.md
-# Output: merged-verdicts.md (sorted by verdict severity)
+source venv/bin/activate
+python -m pytest tests/ -v
 ```
 
-### Results
+## Advanced: Running Individual Scripts
 
-- **Verification**: 388 references → 255 verified, 133 problematic
-- **Classification**: 133 problematic → 65 scholarly (true hallucinations), 68 grey literature
-- **LLM Verification**: 65 candidates ready for manual verification with web search
-- **Merged Results**: Side-by-side comparison of multiple verification runs
+The pipeline is composed of individual scripts that can also be run separately.
 
-## Scripts Summary
+### Checking a single PDF directly
 
-| Script | Input | Output | Purpose |
-|--------|-------|--------|---------|
-| `check_hallucinated_references.py` | PDF file | Console + logs | Extract & verify references from PDFs |
-| `check_references_from_json.py` | JSON (references) | results.json | Verify pre-extracted references |
-| `postprocess_results.py` | results.json | results-postprocessed.json | Classify references by type |
-| `export_for_llm_verification.py` | results-filtered-postprocessed.json | hallucination-candidates-for-verification.txt | Format for LLM verification |
-| `merge_llm_verdicts.py` | Multiple .md files | merged-verdicts.md | Merge and compare LLM verification results |
+```bash
+python3 check_hallucinated_references.py <path_to_pdf>
 
-### Checking references from JSON (from reference verification pipeline)
+# Options
+python3 check_hallucinated_references.py --no-color <path_to_pdf>
+python3 check_hallucinated_references.py --output log.txt <path_to_pdf>
+python3 check_hallucinated_references.py --sleep=0.5 <path_to_pdf>
+```
 
-The `check_references_from_json.py` script processes references that have already been extracted and verified by another tool, reading a JSON file with the following format:
+Note: this outputs text only (no JSON), so the downstream pipeline scripts cannot consume its output directly. Use `run_pipeline.py` for the full end-to-end workflow.
+
+### Checking references from JSON (pre-extracted)
+
+If you have references already extracted by another tool in JSON format:
+
+```bash
+python3 check_references_from_json.py <json_file>
+python3 check_references_from_json.py --openalex-key=YOUR_API_KEY --sleep=0.5 <json_file>
+```
+
+Expected JSON input format:
 
 ```json
 [
   {
-    "pdf": "papers/ICSA_2026_paper_1.pdf",
-    "error": null,
-    "reference_count": 30,
+    "pdf": "papers/paper_1.pdf",
     "references": [
       {
-        "title": "Is sampling better than evolution for search-based software engineering",
-        "authors": ["J Chen", "V Nair", "R Krishna", "T Menzies"],
-        "year": "2016",
+        "title": "Paper title",
+        "authors": ["J Smith", "A Jones"],
+        "year": "2023",
         "doi": null,
-        "verification": {
-          "exists": false,
-          "reason": "score_below_threshold"
-        }
+        "verification": { "exists": false, "reason": "score_below_threshold" }
       }
     ]
   }
 ]
 ```
 
-Usage:
+### Post-processing, export, and merge (manual steps)
 
 ```bash
-# Basic usage
-python check_references_from_json.py <json_file>
+# Classify scholarly vs grey literature
+python3 postprocess_results.py results.json
 
-# Without colored output
-python check_references_from_json.py --no-color <json_file>
+# Export hallucination candidates for LLM verification
+python3 export_for_llm_verification.py results-filtered-postprocessed.json
 
-# Save output to file
-python check_references_from_json.py --output results.txt <json_file>
-
-# With OpenAlex API key
-python check_references_from_json.py --openalex-key=YOUR_API_KEY <json_file>
-
-# With custom delay for DBLP
-python check_references_from_json.py --sleep=2.0 <json_file>
+# Merge multiple LLM verification runs
+python3 merge_llm_verdicts.py merged-verdicts.md run1.md run2.md
 ```
 
-### Options
+## Scripts Summary
 
-| Option | Description |
-|--------|-------------|
-| `--no-color` | Disable colored output (useful for piping or logging) |
-| `--sleep=SECONDS` | Set delay before DBLP requests to avoid rate limiting (default: 1.0 second). Only applies when a reference isn't found in earlier databases. |
-| `--openalex-key=KEY` | OpenAlex API key. If provided, queries OpenAlex first before other databases. Get a free key at https://openalex.org/settings/api |
-
-## Example Output
-
-```
-Analyzing paper example.pdf
-
-============================================================
-POTENTIAL HALLUCINATION DETECTED
-============================================================
-
-Title:
-  Some Fabricated Paper Title That Does Not Exist
-
-Status: Reference not found in any database
-Searched: CrossRef, arXiv, DBLP
-
-------------------------------------------------------------
-
-============================================================
-SUMMARY
-============================================================
-  Total references analyzed: 35
-  Verified: 34
-  Not found (potential hallucinations): 1
-```
+| Script | Input | Output | Purpose |
+|--------|-------|--------|---------|
+| `run_pipeline.py` | PDF directory | All output files | **End-to-end pipeline** |
+| `check_hallucinated_references.py` | Single PDF | Console + text logs | Extract & verify references from one PDF |
+| `check_references_from_json.py` | JSON (pre-extracted refs) | `results.json` | Verify pre-extracted references |
+| `postprocess_results.py` | `results.json` | Classified JSON + report | Classify references by type |
+| `export_for_llm_verification.py` | Filtered JSON | Verification prompt text | Format for LLM verification |
+| `merge_llm_verdicts.py` | Multiple `.md` files | `merged-verdicts.md` | Merge and compare LLM results |
 
 ## How It Works
 
@@ -251,26 +174,29 @@ SUMMARY
 3. **Reference Segmentation**: Splits references by numbered patterns ([1], [2], etc.)
 4. **Title & Author Extraction**: Parses each reference to extract title and authors
 5. **Database Validation**: Queries databases in order of rate-limit generosity:
-   - OpenAlex (if API key provided) - most generous rate limits
-   - CrossRef - good coverage, generous limits
-   - arXiv - moderate limits
-   - DBLP - most restrictive, queried last with configurable delay
+   - OpenAlex (if API key provided) — most generous rate limits
+   - CrossRef — good coverage, generous limits
+   - arXiv — moderate limits
+   - DBLP — most restrictive, queried last with configurable delay
 6. **Author Matching**: Confirms that found titles have matching authors
+7. **Classification**: Separates scholarly references from grey literature (standards, industry reports, specs) so only true hallucination candidates are flagged
+8. **LLM Export**: Formats candidates with a prompt template ready to paste into ChatGPT or Claude for web-search verification
 
 ## Limitations
 
-- References to non-indexed sources (technical reports, websites, books) may be flagged as "not found"
+- References to non-indexed sources (technical reports, websites, books) may be flagged as "not found" — the classification step filters most of these out
 - Very recent papers may not yet be indexed in databases
 - Some legitimate papers in niche journals may not be found
 - PDF extraction quality depends on the PDF structure
 
 ## Dependencies
 
-- `requests` - HTTP requests for API queries
-- `beautifulsoup4` - HTML parsing
-- `rapidfuzz` - Fuzzy string matching for title comparison
-- `feedparser` - arXiv API response parsing
-- `PyMuPDF` - PDF text extraction
+- `requests` — HTTP requests for API queries
+- `beautifulsoup4` — HTML parsing
+- `rapidfuzz` — Fuzzy string matching for title comparison
+- `feedparser` — arXiv API response parsing
+- `PyMuPDF` — PDF text extraction
+- `pytest` — Testing
 
 ## License
 

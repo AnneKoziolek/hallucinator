@@ -114,63 +114,66 @@ def load_references_from_json(json_file):
     return all_references
 
 
-def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, output_file=None):
-    """Check references from JSON file against academic databases."""
-    
-    references = load_references_from_json(json_file)
-    
-    if not references:
-        print("[Error] No valid references found in JSON file")
-        return
-    
-    print(f"Processing {len(references)} references from {json_file}")
+def verify_references(references, sleep_time=1.0, openalex_key=None, output_file=None):
+    """Verify a list of reference dicts against academic databases.
+
+    Args:
+        references: list of dicts with keys: title, authors, year, doi, pdf, verification
+        sleep_time: delay before DBLP queries to avoid rate limiting
+        openalex_key: optional OpenAlex API key
+        output_file: optional path for streaming text output
+
+    Returns:
+        list of result dicts with hallucinator_check field
+    """
+    print(f"Processing {len(references)} references")
     print("="*60)
     print()
-    
+
     # Open output file for streaming results if specified
     output_f = None
     if output_file:
         output_f = open(output_file, 'w', encoding='utf-8')
-        output_f.write(f"Processing {len(references)} references from {json_file}\n")
+        output_f.write(f"Processing {len(references)} references\n")
         output_f.write("="*60 + "\n\n")
-    
+
     # Prepare results list for JSON output
     results = []
-    
+
     found = 0
     failed = 0
     mismatched = 0
     skipped = 0
-    
+
     for i, ref in enumerate(references, 1):
         title = ref['title']
         ref_authors = ref['authors']
         year = ref['year']
         pdf = ref['pdf']
-        
+
         status_line = f"[{i}/{len(references)}] {title}"
         print(status_line)
         if output_f:
             output_f.write(status_line + "\n")
-        
+
         # Show authors
         authors_line = f"        Authors: {', '.join(ref_authors)}"
         print(authors_line)
         if output_f:
             output_f.write(authors_line + "\n")
-        
+
         # Optional: Show year and PDF source
         if year:
             year_line = f"        Year: {year}"
             print(year_line)
             if output_f:
                 output_f.write(year_line + "\n")
-        
+
         pdf_line = f"        PDF: {pdf}"
         print(pdf_line)
         if output_f:
             output_f.write(pdf_line + "\n")
-        
+
         # Query services in order
         found_title = None
         found_authors = None
@@ -178,7 +181,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
         openalex_url = None
         openalex_id = None
         pub_year = None
-        
+
         # 1. OpenAlex (if API key provided)
         if openalex_key:
             print(f"        → Searching OpenAlex...")
@@ -192,7 +195,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
                 found_title = None
                 found_authors = None
                 openalex_url = None
-        
+
         # 2. CrossRef (if not found in OpenAlex)
         if not found_title:
             print(f"        → Searching CrossRef...")
@@ -201,7 +204,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
             found_title, found_authors = query_crossref(title)
             if found_title:
                 source = "CrossRef"
-        
+
         # 3. arXiv (if not found in CrossRef)
         if not found_title:
             print(f"        → Searching arXiv...")
@@ -210,7 +213,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
             found_title, found_authors = query_arxiv(title)
             if found_title:
                 source = "arXiv"
-        
+
         # 4. DBLP - sleep before to avoid rate limiting
         if not found_title:
             print(f"        → Searching DBLP (waiting {sleep_time}s)...")
@@ -220,7 +223,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
             found_title, found_authors = query_dblp(title)
             if found_title:
                 source = "DBLP"
-        
+
         # Determine verification status
         verification_status = "not_found"
         if found_title:
@@ -228,7 +231,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
                 verification_status = "verified"
             else:
                 verification_status = "author_mismatch"
-        
+
         # Create result entry
         result_entry = {
             "title": title,
@@ -247,7 +250,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
             }
         }
         results.append(result_entry)
-        
+
         # Process results and display
         if found_title:
             if validate_authors(ref_authors, found_authors):
@@ -255,52 +258,52 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
                 print(result_line)
                 if output_f:
                     output_f.write(result_line + "\n")
-                
+
                 # Show additional details for OpenAlex
                 if source == "OpenAlex" and openalex_url:
                     detail_line = f"        Found title: {found_title}"
                     print(detail_line)
                     if output_f:
                         output_f.write(detail_line + "\n")
-                    
+
                     found_authors_line = f"        Found authors: {', '.join(found_authors)}"
                     print(found_authors_line)
                     if output_f:
                         output_f.write(found_authors_line + "\n")
-                    
+
                     if pub_year:
                         year_line = f"        Published: {pub_year}"
                         print(year_line)
                         if output_f:
                             output_f.write(year_line + "\n")
-                    
+
                     url_line = f"        OpenAlex URL: {openalex_url}"
                     print(url_line)
                     if output_f:
                         output_f.write(url_line + "\n")
-                
+
                 found += 1
             else:
                 result_line = f"        ✗ Author mismatch in {source}"
                 print(result_line)
                 if output_f:
                     output_f.write(result_line + "\n")
-                
+
                 # Show details for OpenAlex mismatches too
                 if source == "OpenAlex" and openalex_url:
                     detail_line = f"        Found title: {found_title}"
                     print(detail_line)
                     if output_f:
                         output_f.write(detail_line + "\n")
-                    
+
                     url_line = f"        OpenAlex URL: {openalex_url}"
                     print(url_line)
                     if output_f:
                         output_f.write(url_line + "\n")
-                    
+
                     ref_authors_str = ", ".join(ref_authors)
                     found_authors_str = ", ".join(found_authors)
-                    
+
                     authors_line = f"        Paper authors: {ref_authors_str}"
                     found_line = f"        Found authors: {found_authors_str}"
                     print(authors_line)
@@ -308,7 +311,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
                     if output_f:
                         output_f.write(authors_line + "\n")
                         output_f.write(found_line + "\n")
-                
+
                 print_hallucinated_reference(
                     title, "author_mismatch", source=source,
                     ref_authors=ref_authors, found_authors=found_authors
@@ -321,12 +324,12 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
                 output_f.write(result_line + "\n")
             print_hallucinated_reference(title, "not_found", searched_openalex=bool(openalex_key))
             failed += 1
-        
+
         print()
         if output_f:
             output_f.write("\n")
             output_f.flush()  # Flush to file immediately
-    
+
     # Print summary
     print()
     print(f"{Colors.BOLD}{'='*60}{Colors.RESET}")
@@ -339,7 +342,7 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
     if failed > 0:
         print(f"  {Colors.RED}Not found (potential hallucinations):{Colors.RESET} {failed}")
     print()
-    
+
     # Write summary to output file
     if output_f:
         output_f.write("\n")
@@ -354,7 +357,23 @@ def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, out
             output_f.write(f"  Not found (potential hallucinations): {failed}\n")
         output_f.write("\n")
         output_f.close()
-    
+
+    return results
+
+
+def check_references_from_json(json_file, sleep_time=1.0, openalex_key=None, output_file=None):
+    """Check references from JSON file against academic databases."""
+
+    references = load_references_from_json(json_file)
+
+    if not references:
+        print("[Error] No valid references found in JSON file")
+        return
+
+    print(f"Loaded {len(references)} references from {json_file}")
+
+    results = verify_references(references, sleep_time, openalex_key, output_file)
+
     # Write results to JSON file
     json_output_file = "results.json"
     try:
