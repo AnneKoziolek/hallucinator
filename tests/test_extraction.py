@@ -17,7 +17,7 @@ class TestExtractFromPDF:
             pytest.skip("Test PDF not available")
         refs = extract_references_with_titles_and_authors(test_pdf_path)
         assert len(refs) > 0, "Should extract at least one reference"
-        for title, authors in refs:
+        for title, authors, *_ in refs:
             assert isinstance(title, str)
             assert len(title) > 5, f"Title too short: {title}"
             assert isinstance(authors, list)
@@ -27,7 +27,7 @@ class TestExtractFromPDF:
             pytest.skip("Test PDF not available")
         refs = extract_references_with_titles_and_authors(test_pdf_path)
         # At least some references should have authors
-        refs_with_authors = [(t, a) for t, a in refs if a]
+        refs_with_authors = [(t, a) for t, a, *_ in refs if a]
         assert len(refs_with_authors) > 0, "At least some references should have authors"
 
 

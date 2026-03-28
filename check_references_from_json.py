@@ -169,10 +169,26 @@ def verify_references(references, sleep_time=1.0, openalex_key=None, output_file
             if output_f:
                 output_f.write(year_line + "\n")
 
+        # Show DOI if available
+        doi = ref.get('doi')
+        if doi:
+            doi_line = f"        DOI: {doi}"
+            print(doi_line)
+            if output_f:
+                output_f.write(doi_line + "\n")
+
         pdf_line = f"        PDF: {pdf}"
         print(pdf_line)
         if output_f:
             output_f.write(pdf_line + "\n")
+
+        # Show raw reference text if available (from PDF extraction)
+        raw_text = ref.get('raw_text')
+        if raw_text:
+            raw_line = f"        Raw: {raw_text[:200]}"
+            print(raw_line)
+            if output_f:
+                output_f.write(raw_line + "\n")
 
         # Query services in order
         found_title = None

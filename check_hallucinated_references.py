@@ -460,6 +460,18 @@ def extract_title_from_reference(ref_text):
             if len(quoted_part.split()) >= 3:
                 return quoted_part, True
 
+    # === Format: Springer/LNCS - "Authors: Title. Venue (Year)" or "Authors: Title. In Venue" ===
+    colon_match = re.search(r'(?:et\s+al\.|[A-Z]\.)\s*:\s+', ref_text)
+    if colon_match:
+        after_colon = ref_text[colon_match.end():]
+        # Title runs until the first sentence boundary (period + space)
+        parts = split_sentences_skip_initials(after_colon)
+        if parts:
+            title = parts[0].strip()
+            title = re.sub(r'\.\s*$', '', title)
+            if len(title.split()) >= 3:
+                return title, False
+
     # === Format 2: ACM - "Authors. Year. Title. In Venue" ===
     # Pattern: ". YYYY. Title-text. In "
     # Use \s+ after year to avoid matching DOIs like "10.1109/CVPR.2022.001234"
@@ -570,6 +582,8 @@ def extract_references_with_titles_and_authors(pdf_path):
     for ref_text in raw_refs:
         # Fix hyphenation from PDF line breaks (preserves compound words like "human-centered")
         ref_text = fix_hyphenation(ref_text)
+        # Collapse newlines into spaces (PDF text often has line breaks mid-reference)
+        ref_text = re.sub(r'\s*\n\s*', ' ', ref_text)
 
         # Skip entries with non-academic URLs (keep acm, ieee, usenix, arxiv, doi)
         # Also catch broken URLs with spaces like "https: //" or "ht tps://"
@@ -597,7 +611,7 @@ def extract_references_with_titles_and_authors(pdf_path):
         # Update previous_authors for potential next em-dash reference
         previous_authors = authors
 
-        references.append((title, authors))
+        references.append((title, authors, ref_text))
 
     return references
 
@@ -745,9 +759,19 @@ def validate_authors(ref_authors, found_authors):
             return ""
         return f"{parts[0][0]} {parts[-1].lower()}"
 
+    def last_name(name):
+        parts = name.split()
+        return parts[-1].lower() if parts else ""
+
     ref_set = set(normalize_author(a) for a in ref_authors)
     found_set = set(normalize_author(a) for a in found_authors)
-    return bool(ref_set & found_set)
+    if ref_set & found_set:
+        return True
+
+    # Fallback: match by last name only (handles papers that list only last names)
+    ref_last = set(last_name(a) for a in ref_authors)
+    found_last = set(last_name(a) for a in found_authors)
+    return bool(ref_last & found_last)
 
 def main(pdf_path, sleep_time=1.0, openalex_key=None):
     refs = extract_references_with_titles_and_authors(pdf_path)

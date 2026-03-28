@@ -20,19 +20,26 @@ from export_for_llm_verification import export_for_llm
 
 
 def pdf_refs_to_dicts(pdf_path, refs):
-    """Convert (title, authors) tuples to the dict format used by verify_references."""
-    return [
-        {
-            'title': title,
-            'authors': authors,
-            'year': '',
-            'doi': None,
-            'pdf': pdf_path,
-            'verification': {}
-        }
-        for title, authors in refs
-        if title and authors
-    ]
+    """Convert (title, authors, raw_text) tuples to the dict format used by verify_references."""
+    result = []
+    for item in refs:
+        # Support both (title, authors) and (title, authors, raw_text) tuples
+        if len(item) == 3:
+            title, authors, raw_text = item
+        else:
+            title, authors = item
+            raw_text = None
+        if title and authors:
+            result.append({
+                'title': title,
+                'authors': authors,
+                'year': '',
+                'doi': None,
+                'pdf': pdf_path,
+                'raw_text': raw_text,
+                'verification': {}
+            })
+    return result
 
 
 def run_pipeline(pdf_dir, sleep_time=1.0, openalex_key=None, output_dir='.'):
