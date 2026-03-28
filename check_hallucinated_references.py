@@ -469,7 +469,7 @@ def extract_title_from_reference(ref_text):
         if parts:
             title = parts[0].strip()
             title = re.sub(r'\.\s*$', '', title)
-            if len(title.split()) >= 3:
+            if len(title.split()) >= 2:
                 return title, False
 
     # === Format 2: ACM - "Authors. Year. Title. In Venue" ===
@@ -753,24 +753,39 @@ def query_acl(title):
     return None, []
 
 def validate_authors(ref_authors, found_authors):
+    def strip_diacritics(text):
+        """Normalize unicode characters by stripping diacritics (e.g., ḑ→d, é→e)."""
+        import unicodedata
+        nfkd = unicodedata.normalize('NFKD', text)
+        return ''.join(c for c in nfkd if not unicodedata.combining(c))
+
     def normalize_author(name):
-        parts = name.split()
+        parts = strip_diacritics(name).split()
         if not parts:
             return ""
         return f"{parts[0][0]} {parts[-1].lower()}"
 
-    def last_name(name):
-        parts = name.split()
-        return parts[-1].lower() if parts else ""
+    def last_names(name):
+        """Return possible last names (handles both 'First Last' and 'Last, First' formats)."""
+        parts = strip_diacritics(name).replace(',', '').split()
+        if not parts:
+            return set()
+        # Could be "First Last" or "Last First" — return both as candidates
+        return {parts[0].lower(), parts[-1].lower()}
 
     ref_set = set(normalize_author(a) for a in ref_authors)
     found_set = set(normalize_author(a) for a in found_authors)
     if ref_set & found_set:
         return True
 
-    # Fallback: match by last name only (handles papers that list only last names)
-    ref_last = set(last_name(a) for a in ref_authors)
-    found_last = set(last_name(a) for a in found_authors)
+    # Fallback: match by last name only (handles papers that list only last names,
+    # and both "First Last" and "Last, First" name formats)
+    ref_last = set()
+    for a in ref_authors:
+        ref_last |= last_names(a)
+    found_last = set()
+    for a in found_authors:
+        found_last |= last_names(a)
     return bool(ref_last & found_last)
 
 def main(pdf_path, sleep_time=1.0, openalex_key=None):

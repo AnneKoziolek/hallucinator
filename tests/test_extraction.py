@@ -38,6 +38,18 @@ class TestExtractTitle:
         assert title is not None
         assert "Survey" in title or "Deep Learning" in title
 
+    def test_springer_journal(self):
+        ref = 'Cámara, J., Correia, P., et al.: Incorporating architecture-based self-adaptation into an adaptive industrial software system. Journal of Systems and Software (2016)'
+        title, from_quotes = extract_title_from_reference(ref)
+        assert title == "Incorporating architecture-based self-adaptation into an adaptive industrial software system"
+        assert not from_quotes
+
+    def test_springer_inproceedings(self):
+        ref = 'Alur, R., Bodík, R., Juniwal, G., Martin, M.M.K., Raghothaman, M., Seshia, S.A., Singh, R., Solar-Lezama, A., Torlak, E., Udupa, A.: Syntax-Guided Synthesis. In: Formal Methods in Computer-Aided Design (FMCAD), pp'
+        title, from_quotes = extract_title_from_reference(ref)
+        assert title == "Syntax-Guided Synthesis"
+        assert not from_quotes
+
     def test_returns_none_for_empty(self):
         title, from_quotes = extract_title_from_reference("")
         # Should return something (possibly empty) without crashing
