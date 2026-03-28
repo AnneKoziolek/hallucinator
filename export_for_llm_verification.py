@@ -215,8 +215,11 @@ References to verify:
     print("Next steps:")
     print(f"1. Open {output_file} in your text editor")
     print("2. Copy the 'PROMPT TEMPLATE FOR LLM VERIFICATION' section")
-    print("3. Paste it into ChatGPT with web search enabled (GPT-4, Copilot, etc.)")
-    print("4. Let the LLM verify the references")
+    print("3. Paste it into e.g. ChatGPT or claude.ai. Make sure to include the reference list below the prompt.")
+    print("4. Save each LLM response as a separate .md file (e.g., run1.md, run2.md)")
+    print("   Run at least 2 times for reliable results")
+    print("5. Merge the verdicts:")
+    print(f"   python3 merge_llm_verdicts.py merged-verdicts.md run1.md run2.md")
     print()
 
 
