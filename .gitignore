@@ -213,4 +213,7 @@ __marimo__/
 chatGPT-output-with-id.md
 chatGPT-output-with-links.md
 chatGPT-output-with-links-and-ids.md
+
+# Data folders
+papers/*
 merged-verdicts.md
