@@ -147,37 +147,59 @@ def extract_text_from_pdf(pdf_path):
 
 
 def find_references_section(text):
-    """Locate the references section in the document text."""
-    # Common reference section headers
-    headers = [
-        r'\n\s*References\s*\n',
-        r'\n\s*REFERENCES\s*\n',
-        r'\n\s*Bibliography\s*\n',
-        r'\n\s*BIBLIOGRAPHY\s*\n',
-        r'\n\s*Works Cited\s*\n',
-    ]
+    """Locate the references section in the document text.
 
-    for pattern in headers:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            ref_start = match.end()
-            # Find end markers (Appendix, Acknowledgments, etc.)
-            end_markers = [
-                r'\n\s*Appendix',
-                r'\n\s*APPENDIX',
-                r'\n\s*Acknowledgments',
-                r'\n\s*ACKNOWLEDGMENTS',
-                r'\n\s*Acknowledgements',
-                r'\n\s*Supplementary',
-                r'\n\s*SUPPLEMENTARY',
-            ]
-            ref_end = len(text)
-            for end_pattern in end_markers:
-                end_match = re.search(end_pattern, text[ref_start:], re.IGNORECASE)
-                if end_match:
-                    ref_end = min(ref_end, ref_start + end_match.start())
+    A document can contain several lines that look like a reference header:
+    a table-of-contents entry, a table caption ("...References..."), and the
+    actual bibliography (often with a running header repeated on every page).
+    Rather than trusting the first match, score every candidate header by how
+    densely reference markers (IEEE "[12]" or numbered "12.") follow it, and
+    require the first marker to appear right after the header. The real
+    bibliography is the candidate whose entries start immediately and run long.
+    """
+    header_re = re.compile(
+        r'\n[ \t]*(?:References|Bibliography|Works\s+Cited|Literature(?:\s+Cited)?)[ \t]*\n',
+        re.IGNORECASE,
+    )
+    end_marker_re = re.compile(
+        r'\n[ \t]*(?:Appendix|Appendices|Acknowledge?ments?|Supplementary|'
+        r'Curriculum\s+Vitae|Declaration|Erkl[aä]rung)\b',
+        re.IGNORECASE,
+    )
+    ieee_marker_re = re.compile(r'\[(\d+)\]')
+    numbered_marker_re = re.compile(r'(?m)^[ \t]*(\d+)\.[ \t]')
 
-            return text[ref_start:ref_end]
+    candidates = [m.end() for m in header_re.finditer(text)]
+
+    best_section = None
+    best_score = 0
+    for start in candidates:
+        # Bound the candidate region at the next "end of bibliography" marker.
+        region = text[start:]
+        end_match = end_marker_re.search(region)
+        if end_match:
+            region = region[:end_match.start()]
+
+        # Prefer IEEE-style "[n]" markers; fall back to "n." numbered lists.
+        first_ieee = ieee_marker_re.search(region)
+        if first_ieee and first_ieee.start() <= 80:
+            score = len(ieee_marker_re.findall(region))
+        else:
+            first_num = numbered_marker_re.search(region)
+            if first_num and first_num.start() <= 80:
+                score = len(numbered_marker_re.findall(region))
+            else:
+                score = 0
+
+        if score > best_score:
+            best_score = score
+            # Prepend a newline so segment_references can match a marker that
+            # sits at the very start of the section (e.g. "[1]" right after the
+            # header, with no preceding newline of its own).
+            best_section = '\n' + region
+
+    if best_section is not None and best_score >= 3:
+        return best_section
 
     # Fallback: try last 30% of document
     cutoff = int(len(text) * 0.7)
@@ -262,18 +284,21 @@ def extract_authors_from_reference(ref_text):
         first_period = pos
         break
 
-    # Determine author section based on format detection
-    author_end = len(ref_text)
-
+    # Determine author section based on format detection.
+    # A quoted title is the most reliable boundary, so it wins outright. Failing
+    # that, the first real sentence period ends the author list. The ". YYYY."
+    # marker is used only as a last resort: in biblatex / thesis bibliographies
+    # the publication year lives in trailing metadata ("... Apr. 2026. doi:"),
+    # so trusting it over the first sentence period would swallow the title into
+    # the authors.
     if quote_match:
-        # IEEE format - quoted title
         author_end = quote_match.start()
-    elif acm_year_match:
-        # ACM format - period before year
-        author_end = acm_year_match.start() + 1
     elif first_period > 0:
-        # USENIX format - first sentence is authors
         author_end = first_period
+    elif acm_year_match:
+        author_end = acm_year_match.start() + 1
+    else:
+        author_end = len(ref_text)
 
     author_section = ref_text[:author_end].strip()
 
@@ -363,6 +388,7 @@ def clean_title(title, from_quotes=False):
         r',\s*\d+\s*\(\d+\).*$',  # Volume(issue) pattern
         r',\s*\d+\s*$',  # Trailing volume number
         r'\.\s*\d+\s*$',  # Trailing number after period
+        r'[.?!]?\s*arXiv\s*:.*$',  # trailing arXiv id (e.g. "Title? arXiv:2508.01234")
         r'\.\s*https?://.*$',  # URLs
         r'\.\s*ht\s*tps?://.*$',  # Broken URLs
         r',\s*(?:vol\.|pp\.|pages).*$',
@@ -380,6 +406,16 @@ def clean_title(title, from_quotes=False):
     return title.strip()
 
 
+# Abbreviations whose trailing period is not a sentence boundary. These appear
+# inside titles ("RAG vs. GraphRAG") and metadata, and must not split a title.
+# Note: "al" is deliberately excluded — the period in "et al." ends the author
+# list and must remain a sentence boundary separating authors from the title.
+SENTENCE_ABBREVIATIONS = {
+    'vs', 'no', 'vol', 'pp', 'p', 'ed', 'eds', 'rev', 'ch', 'fig', 'eq',
+    'inc', 'ltd', 'corp', 'co', 'etc', 'cf', 'approx',
+}
+
+
 def split_sentences_skip_initials(text):
     """Split text into sentences, but skip periods that are author initials (e.g., 'M.' 'J.')."""
     sentences = []
@@ -393,6 +429,11 @@ def split_sentences_skip_initials(text):
             # If char before is a single capital (and char before that is space/start), it's an initial
             if char_before.isupper() and (pos == 1 or not text[pos-2].isalpha()):
                 continue  # Skip this period - it's an initial
+
+        # Skip periods that close a common abbreviation (vs., No., eds., ...)
+        word_before = re.search(r'([A-Za-z]+)$', text[:pos])
+        if word_before and word_before.group(1).lower() in SENTENCE_ABBREVIATIONS:
+            continue
 
         # This is a real sentence boundary
         sentences.append(text[current_start:pos].strip())
@@ -456,8 +497,9 @@ def extract_title_from_reference(ref_text):
                     title = f'{quoted_part}: {subtitle}'
                     return title, True
 
-            # No subtitle - just use quoted part if long enough
-            if len(quoted_part.split()) >= 3:
+            # No subtitle - quoted text is unambiguously the title, so accept it
+            # even when very short (e.g. "Knowledge Graphs").
+            if len(quoted_part.split()) >= 2:
                 return quoted_part, True
 
     # === Format: Springer/LNCS - "Authors: Title. Venue (Year)" or "Authors: Title. In Venue" ===
@@ -478,21 +520,30 @@ def extract_title_from_reference(ref_text):
     acm_match = re.search(r'\.\s*((?:19|20)\d{2})\.\s+', ref_text)
     if acm_match:
         after_year = ref_text[acm_match.end():]
-        # Find where title ends - at ". In " or at venue indicators
+        # Find where title ends - at ". In " or at venue/metadata indicators
         title_end_patterns = [
             r'\.\s*[Ii]n\s+[A-Z]',  # ". In Proceedings"
             r'\.\s*(?:Proceedings|IEEE|ACM|USENIX|arXiv)',
-            r'\s+doi:',
+            r'\s+(?:doi|url|isbn)\s*:',  # trailing metadata markers
+            r'\s+arXiv\s*:',
         ]
         title_end = len(after_year)
         for pattern in title_end_patterns:
-            m = re.search(pattern, after_year)
+            m = re.search(pattern, after_year, re.IGNORECASE)
             if m:
                 title_end = min(title_end, m.start())
 
         title = after_year[:title_end].strip()
         title = re.sub(r'\.\s*$', '', title)
-        if len(title.split()) >= 3:
+        # Reject when the matched year was actually trailing metadata (biblatex
+        # "Month Year"): the text after it then starts with a metadata token or a
+        # digit rather than a real title. Falling through lets later heuristics
+        # (and the second-sentence fallback) recover the true title.
+        looks_like_metadata = bool(
+            re.match(r'(?i)^(?:doi|url|isbn|https?|arxiv|pp?\.|vol\.?|no\.)\b', title)
+            or (title and title[0].isdigit())
+        )
+        if len(title.split()) >= 3 and not looks_like_metadata:
             return title, False  # from_quotes=False
 
     # === Format 3: USENIX - "Authors. Title. In/Journal Venue, Year" ===
@@ -561,6 +612,56 @@ def extract_title_from_reference(ref_text):
     return "", False
 
 
+# Hosts that publish or index scholarly work. A reference linking here is kept
+# even if it has no DOI/arXiv id. Generic hosts (github, huggingface, personal
+# blogs, vendor docs) are intentionally absent so bare web links are dropped.
+ACADEMIC_HOSTS_RE = re.compile(
+    r'(?:acm\.org|ieee\.org|ieeexplore|usenix\.org|aclanthology\.org|'
+    r'(?:papers\.)?nips\.cc|neurips\.cc|proceedings\.mlr\.press|mlr\.press|'
+    r'openreview\.net|link\.springer|springer(?:link)?\.com|sciencedirect\.com|'
+    r'ncbi\.nlm\.nih\.gov|semanticscholar\.org|dagstuhl\.de|hdl\.handle\.net|'
+    r'jmir\.org|dl\.acm\.org|onlinelibrary\.wiley\.com|tandfonline\.com|'
+    r'researchgate\.net|sciencemag\.org|nature\.com|jstor\.org|aaai\.org|'
+    r'eccc\.weizmann|epubs\.siam\.org|cambridge\.org|oup\.com|'
+    r'ceur-ws\.org|aisnet\.org|aisel\.aisnet)',
+    re.IGNORECASE,
+)
+
+# A reference published in a conference/journal is scholarly regardless of which
+# host (if any) it links to. Matches "In: Proceedings/Findings/Advances/...", an
+# ordinal venue ("In: 31st ..."), or a bare "Proceedings of ...".
+VENUE_RE = re.compile(
+    r'(?i)\bIn:\s*(?:Proceedings|Findings|Advances|Transactions|Journal|'
+    r'\d{1,3}(?:st|nd|rd|th)\b)|\bProceedings\s+of\b',
+)
+
+
+def is_scholarly_reference(ref_text):
+    """Return True if a reference carries a scholarly identifier.
+
+    True when the entry has a DOI, an arXiv id, a link to a known academic host,
+    or a conference/journal venue. Used to decide whether a reference that
+    contains a URL is a real paper (keep) versus grey literature / a bare web
+    link (drop). PDF text extraction frequently splits URLs and DOIs with stray
+    spaces ("aclanthol ogy.org", "10 . 48550 / arXiv"), so identifiers are also
+    matched against a whitespace-stripped copy of the text.
+    """
+    compact = re.sub(r'\s+', '', ref_text)
+    for variant in (ref_text, compact):
+        # DOI: a "doi:" prefix, a doi.org link, or a raw 10.xxxx/ identifier.
+        if re.search(r'doi\s*:|doi\.org|\b10\.\d{4,9}/', variant, re.IGNORECASE):
+            return True
+        # ISBN marks a published book/monograph.
+        if re.search(r'isbn\s*:', variant, re.IGNORECASE):
+            return True
+        # arXiv identifier in any of its common spellings.
+        if re.search(r'arxiv', variant, re.IGNORECASE):
+            return True
+        if ACADEMIC_HOSTS_RE.search(variant):
+            return True
+    return bool(VENUE_RE.search(ref_text))
+
+
 def extract_references_with_titles_and_authors(pdf_path):
     """Extract references from PDF using pure Python (PyMuPDF)."""
     try:
@@ -585,15 +686,23 @@ def extract_references_with_titles_and_authors(pdf_path):
         # Collapse newlines into spaces (PDF text often has line breaks mid-reference)
         ref_text = re.sub(r'\s*\n\s*', ' ', ref_text)
 
-        # Skip entries with non-academic URLs (keep acm, ieee, usenix, arxiv, doi)
-        # Also catch broken URLs with spaces like "https: //" or "ht tps://"
-        if re.search(r'https?\s*:\s*//', ref_text) or re.search(r'ht\s*tps?\s*:\s*//', ref_text):
-            if not re.search(r'(acm\.org|ieee\.org|usenix\.org|arxiv\.org|doi\.org)', ref_text, re.IGNORECASE):
-                continue
+        # Skip entries that are purely a web link with no scholarly identifier.
+        # A reference is treated as scholarly (and kept) if it carries a DOI or
+        # arXiv id, or links to a known academic host. This keeps conference and
+        # journal papers whose canonical URL is not on the old short whitelist
+        # (e.g. aclanthology.org, nips.cc, PubMed Central, Springer) while still
+        # dropping bare links to grey-literature sites.
+        # Also catch broken URLs with spaces like "https: //" or "ht tps://".
+        has_url = bool(re.search(r'h\s*t\s*t\s*p\s*s?\s*:\s*//', ref_text))
+        if has_url and not is_scholarly_reference(ref_text):
+            continue
 
         title, from_quotes = extract_title_from_reference(ref_text)
         title = clean_title(title, from_quotes=from_quotes)
-        if not title or len(title.split()) < 5:
+        # Allow short titles (down to two words): some real papers/books have
+        # very short titles (e.g. "Knowledge Graphs"). Author validation during
+        # verification guards against spurious matches on generic titles.
+        if not title or len(title.split()) < 2:
             continue
 
         authors = extract_authors_from_reference(ref_text)

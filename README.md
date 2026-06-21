@@ -39,7 +39,7 @@ pip install -r requirements.txt
 Place your PDF files in a `papers/` directory (or any directory of your choice), then run:
 
 ```bash
-source venv/bin/activate
+source ../venv/bin/activate
 
 # Run the full pipeline
 python3 run_pipeline.py -d papers/ --sleep=0.5 --output-dir=output/
